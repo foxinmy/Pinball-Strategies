@@ -354,22 +354,6 @@
     <input type="text" id="newMachineName" placeholder="输入机器编号/名称" maxlength="30">
     <button class="btn-primary" style="width:auto;padding:10px 20px;margin:0;" onclick="addMachine()">添加</button>
   </div>
-  <div id="activationRow" class="add-machine-row hidden" style="margin-top:6px;">
-    <input type="text" id="activationCode" placeholder="输入卡密解锁更多机器" maxlength="32">
-    <button class="btn-primary" style="width:auto;padding:10px 20px;margin:0;background:var(--yellow);color:#111;" onclick="redeemCode()">激活</button>
-  </div>
-  <div id="proStatusRow" class="hidden" style="text-align:center;margin-top:6px;">
-    <span style="font-size:0.82em;color:var(--green);">✓ 已解锁 Pro 功能（最多 50 台机器）</span>
-  </div>
-  <div id="proFeatureHint" class="hidden" style="margin-top:8px;padding:8px 12px;background:rgba(255,215,0,0.08);border-radius:8px;font-size:0.78em;color:var(--muted);line-height:1.6;">
-    💡 <b style="color:var(--yellow);">卡密可解锁 Pro 功能：</b><br>
-    · 最多管理 50 台机器（当前限 3 台）<br>
-    · 运行中自由切换 积分卡/珠子收益 策略<br>
-    · 记录模式：仅记录落点拟合概率分布<br>
-    · 实时概率偏差 & 准确度分析<br>
-    <a href="https://www.520na.com/shop/TH5B1RKH" target="_blank" rel="noopener" style="display:inline-block;margin-top:6px;padding:5px 14px;background:var(--green);color:#111;border-radius:6px;text-decoration:none;font-weight:600;font-size:1.05em;">⚡ 自助购买 Pro 卡密 ¥9.9</a>
-    <!-- 暂时隐藏手动购买入口 <a href="buy.html" style="display:inline-block;margin-top:6px;margin-left:6px;padding:5px 14px;background:rgba(255,255,255,0.1);color:var(--muted);border-radius:6px;text-decoration:none;font-weight:500;font-size:0.9em;">手动购买</a> -->
-  </div>
 </div>
 
 <!-- ====== Step 1: 配置 ====== -->
@@ -679,17 +663,8 @@ function getMaxMachines() {
 
 function updateQuotaDisplay() {
   const machines = getMachines();
-  const max = getMaxMachines();
   const el = document.getElementById('machineQuota');
   if (el) el.textContent = '机器数量: ' + machines.length + '（不限）';
-  const actRow = document.getElementById('activationRow');
-  const proStatus = document.getElementById('proStatusRow');
-  const proHint = document.getElementById('proFeatureHint');
-  const activated = cloudUid && userMaxMachines >= LIMIT_ACTIVATED;
-  const loggedNotActivated = cloudUid && userMaxMachines < LIMIT_ACTIVATED;
-  if (actRow) actRow.classList.toggle('hidden', !loggedNotActivated);
-  if (proStatus) proStatus.classList.toggle('hidden', !activated);
-  if (proHint) proHint.classList.toggle('hidden', !loggedNotActivated);
 }
 
 function addMachine() {
@@ -697,13 +672,6 @@ function addMachine() {
   const name = input.value.trim();
   if (!name) { showToast('请输入机器名称'); return; }
   const machines = getMachines();
-  const max = getMaxMachines();
-  if (machines.length >= max) {
-    if (!cloudUid) showToast('离线模式最多 ' + max + ' 台机器，登录后可添加更多');
-    else if (userMaxMachines < LIMIT_ACTIVATED) showToast('当前最多 ' + max + ' 台机器，使用卡密可解锁更多');
-    else showToast('已达最大数量限制 (' + max + ')');
-    return;
-  }
   if (machines.some(m => m.id === name)) { showToast('该名称已存在'); return; }
   machines.push({ id: name, createdAt: new Date().toLocaleString() });
   saveMachines(machines);
@@ -830,12 +798,10 @@ function renderMachineList() {
 }
 
 function showPanel(name) {
-  document.getElementById('authPanel').classList.add('hidden');
   document.getElementById('machinePanel').classList.add('hidden');
   document.getElementById('setupPanel').classList.add('hidden');
   document.getElementById('gamePanel').classList.add('hidden');
   document.getElementById('resultPanel').classList.add('hidden');
-  if (name === 'auth') document.getElementById('authPanel').classList.remove('hidden');
   if (name === 'machine') document.getElementById('machinePanel').classList.remove('hidden');
   if (name === 'setup') document.getElementById('setupPanel').classList.remove('hidden');
   if (name === 'game') {
@@ -855,7 +821,7 @@ let gameHistory = [];
 let currentGameMode = 'strategy';
 let lastRecordInfo = null;
 let recordMult = null;
-let userMaxMachines = LIMIT_LOGIN;
+let userMaxMachines = LIMIT_ACTIVATED;
 
 // ── Migrate old single-machine data if present ──
 (function migrateOldData() {
