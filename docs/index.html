@@ -703,10 +703,6 @@ function copyMachine(id) {
   machines.push({ id: newName, createdAt: new Date().toLocaleString() });
   saveMachines(machines);
   // Keep the copied data in local storage
-  try {
-    if (stateRaw) cloudPushState(newName, JSON.parse(stateRaw));
-    if (histRaw) cloudPushHistory(newName, JSON.parse(histRaw));
-  } catch(e) {}
   renderMachineList();
   showToast('已复制为: ' + newName);
 }
@@ -1237,7 +1233,6 @@ function undoLastRecord() {
     gameHistory.pop();
     if (currentMachineId) {
       try { localStorage.setItem('pb_history_' + currentMachineId, JSON.stringify(gameHistory)); } catch(e) {}
-      cloudPushHistory(currentMachineId, gameHistory);
     }
   }
   lastRecordInfo = null;
@@ -1311,7 +1306,6 @@ function addHistory(mult, slot, win, bet) {
   gameHistory.push({mult, slot: slot+1, win, bet, time: new Date().toLocaleTimeString()});
   if (currentMachineId) {
     try { localStorage.setItem('pb_history_' + currentMachineId, JSON.stringify(gameHistory)); } catch(e) {}
-    cloudPushHistory(currentMachineId, gameHistory);
   }
   renderHistory();
 }
