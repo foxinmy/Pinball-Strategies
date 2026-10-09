@@ -659,11 +659,11 @@ function getMachines() { return getMachinesLocal(); }
 
 function saveMachines(machines) {
   saveMachinesLocal(machines);
-  cloudPushMachineList(machines);
+  // Cloud synchronization is disabled in offline-only mode.
 }
 
 function getMaxMachines() {
-  return 999999;
+  return Infinity;
 }
 
 function updateQuotaDisplay() {
@@ -691,11 +691,6 @@ function copyMachine(id) {
   newName = newName.trim();
   if (!newName) { showToast('名称不能为空'); return; }
   var machines = getMachines();
-  var max = getMaxMachines();
-  if (machines.length >= max) {
-    showToast('已达机器数量限制 (' + max + ')，无法复制');
-    return;
-  }
   if (machines.some(function(m) { return m.id === newName; })) { showToast('该名称已存在'); return; }
   // Copy state + history
   var stateRaw = null, histRaw = null;
@@ -707,7 +702,7 @@ function copyMachine(id) {
   } catch(e) {}
   machines.push({ id: newName, createdAt: new Date().toLocaleString() });
   saveMachines(machines);
-  // Push copied data to cloud
+  // Keep the copied data in local storage
   try {
     if (stateRaw) cloudPushState(newName, JSON.parse(stateRaw));
     if (histRaw) cloudPushHistory(newName, JSON.parse(histRaw));
@@ -725,7 +720,7 @@ function deleteMachine(id) {
     localStorage.removeItem('pb_state_' + id);
     localStorage.removeItem('pb_history_' + id);
   } catch(e) {}
-  cloudDeleteMachine(id);
+  // Machine deletion is local only.
   renderMachineList();
   showToast('已删除: ' + id);
 }
@@ -870,7 +865,7 @@ function initMachine() {
   strategy._save();
   gameHistory = [];
   try { localStorage.setItem('pb_history_' + currentMachineId, '[]'); } catch(e) {}
-  cloudPushHistory(currentMachineId, []);
+  // History is saved locally only.
 
   showPanel('game');
   const adaptiveTag = confThreshold > 0 ? `  自适应(${confThreshold})` : '';
@@ -1207,7 +1202,7 @@ function quickRecord(slot, btn) {
   gameHistory.push(entry);
   if (currentMachineId) {
     try { localStorage.setItem('pb_history_' + currentMachineId, JSON.stringify(gameHistory)); } catch(e) {}
-    cloudPushHistory(currentMachineId, gameHistory);
+    // History is saved locally only.
   }
   renderHistory();
   refreshProbs();
