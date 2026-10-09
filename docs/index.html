@@ -7,103 +7,6 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#1a1a2e">
 <link rel="manifest" href="manifest.json">
-<script>
-// ── Firebase API 代理（解决中国大陆无法访问 Google 服务的问题）──
-// 通过 /api/fb-proxy serverless 函数转发 Firebase API 请求
-(function(){
-  window.__fbProxyActive = false;
-  var SERVICES = ['identitytoolkit.googleapis.com', 'securetoken.googleapis.com', 'firestore.googleapis.com'];
-  function rewriteUrl(originalUrl) {
-    for (var i = 0; i < SERVICES.length; i++) {
-      var prefix = 'https://' + SERVICES[i] + '/';
-      if (originalUrl.indexOf(prefix) === 0) {
-        var rest = originalUrl.substring(prefix.length);
-        var svc = SERVICES[i].split('.')[0]; // identitytoolkit | securetoken | firestore
-        // Split path and query
-        var qIdx = rest.indexOf('?');
-        var path = qIdx >= 0 ? rest.substring(0, qIdx) : rest;
-        var query = qIdx >= 0 ? rest.substring(qIdx + 1) : '';
-        var proxyUrl = '/api/fb-proxy?p=' + encodeURIComponent(svc + '/' + path);
-        if (query) proxyUrl += '&' + query;
-        return proxyUrl;
-      }
-    }
-    return null;
-  }
-  window.__activateFirebaseProxy = function() {
-    if (window.__fbProxyActive) return;
-    window.__fbProxyActive = true;
-    var origFetch = window.fetch;
-    window.fetch = function(input, init) {
-      var url = (typeof input === 'string') ? input : (input instanceof Request ? input.url : String(input));
-      var newUrl = rewriteUrl(url);
-      if (newUrl) {
-        // Convert form-encoded body to JSON for proxy compatibility
-        var newInit = init ? Object.assign({}, init) : {};
-        if (newInit.body && typeof newInit.body === 'string' && newInit.body.indexOf('=') > -1) {
-          var ct = '';
-          if (newInit.headers) {
-            if (newInit.headers instanceof Headers) ct = newInit.headers.get('content-type') || '';
-            else if (typeof newInit.headers === 'object') {
-              for (var hk in newInit.headers) { if (hk.toLowerCase() === 'content-type') ct = newInit.headers[hk]; }
-            }
-          }
-          if (ct.indexOf('x-www-form-urlencoded') > -1) {
-            var obj = {};
-            newInit.body.split('&').forEach(function(pair) {
-              var kv = pair.split('='); obj[decodeURIComponent(kv[0])] = decodeURIComponent(kv[1] || '');
-            });
-            newInit.body = JSON.stringify(obj);
-            if (newInit.headers instanceof Headers) { newInit.headers.set('content-type', 'application/json'); }
-            else if (typeof newInit.headers === 'object') {
-              var newHeaders = {};
-              for (var hk2 in newInit.headers) {
-                newHeaders[hk2.toLowerCase() === 'content-type' ? 'content-type' : hk2] = newInit.headers[hk2];
-              }
-              newHeaders['content-type'] = 'application/json';
-              newInit.headers = newHeaders;
-            }
-          }
-        }
-        if (typeof input === 'string') return origFetch.call(this, newUrl, newInit);
-        return origFetch.call(this, new Request(newUrl, newInit), newInit);
-      }
-      return origFetch.call(this, input, init);
-    };
-    var origOpen = XMLHttpRequest.prototype.open;
-    var origSend = XMLHttpRequest.prototype.send;
-    XMLHttpRequest.prototype.open = function(method, url) {
-      this.__proxyUrl = null;
-      if (typeof url === 'string') {
-        var newUrl = rewriteUrl(url);
-        if (newUrl) { this.__proxyUrl = newUrl; arguments[1] = newUrl; }
-      }
-      return origOpen.apply(this, arguments);
-    };
-    XMLHttpRequest.prototype.send = function(body) {
-      // Convert form body to JSON when going through proxy
-      if (this.__proxyUrl && body && typeof body === 'string' && body.indexOf('=') > -1) {
-        var ct = '';
-        try { ct = this.getRequestHeader && this._headers ? '' : ''; } catch(e) {}
-        // Firebase SDK sends form data as string — detect and convert
-        if (body.indexOf('grant_type=') > -1 || body.indexOf('returnSecureToken=') > -1) {
-          var obj = {};
-          body.split('&').forEach(function(pair) {
-            var kv = pair.split('='); obj[decodeURIComponent(kv[0])] = decodeURIComponent(kv[1] || '');
-          });
-          this.setRequestHeader('Content-Type', 'application/json');
-          return origSend.call(this, JSON.stringify(obj));
-        }
-      }
-      return origSend.call(this, body);
-    };
-    console.log('[Proxy] Firebase API proxy activated via /api/fb-proxy');
-  };
-})();
-</script>
-<script src="https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-app-compat.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-auth-compat.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-firestore-compat.min.js"></script>
 <title>弹珠机策略顾问</title>
 <style>
   :root {
@@ -441,51 +344,20 @@
 
 <h1>🎯 弹珠机策略顾问</h1>
 
-<!-- ====== Auth ====== -->
-<div id="authPanel" class="card auth-panel hidden">
-  <h2>🔐 账号</h2>
-  <div class="auth-tabs">
-    <button class="auth-tab active" id="tabLogin" onclick="switchAuthTab('login')">登录</button>
-    <button class="auth-tab" id="tabRegister" onclick="switchAuthTab('register')">注册</button>
-  </div>
-  <input type="email" id="authEmail" class="auth-input" placeholder="邮箱地址" autocomplete="email">
-  <input type="password" id="authPassword" class="auth-input" placeholder="密码（至少6位）" autocomplete="current-password">
-  <div id="authError" class="auth-error"></div>
-  <div id="authNetworkHint" class="hidden" style="margin:8px 0;padding:10px 12px;background:rgba(233,69,96,0.1);border:1px solid rgba(233,69,96,0.3);border-radius:8px;font-size:0.82em;color:var(--muted);line-height:1.6;">⚠️ <b style="color:var(--highlight);">网络连接失败</b><br>Firebase 服务需要访问 Google 服务器。如果您在中国大陆，可能需要：<br>① 使用 VPN / 科学上网工具<br>② 或点击下方「离线使用」</div>
-  <button class="btn-primary" id="authSubmit" onclick="submitAuth()">登录</button>
-  <button class="btn-outline" style="margin-top:6px;" onclick="useOffline()">离线使用（不同步）</button>
-</div>
-
-<div id="userBar" class="user-bar hidden">
-  <span><span id="userEmail" class="user-email"></span><span id="syncStatus" class="sync-status"></span></span>
-  <button class="btn-small btn-outline" onclick="logoutUser()">退出</button>
-</div>
-
 <!-- ====== Step 0: 机器选择 ====== -->
 <div id="machinePanel" class="card hidden">
   <h2>🎰 选择机器</h2>
   <div id="machineQuota" style="text-align:center;font-size:0.82em;color:var(--muted);margin-bottom:8px;"></div>
   <div id="machineList" class="machine-list"></div>
   <div id="machineEmpty" style="text-align:center;color:var(--muted);font-size:0.9em;padding:12px;">暂无机器，请添加</div>
+  <div class="row" style="margin-top:10px;">
+    <button class="btn-outline" style="margin-top:0;" onclick="exportLocalData()">导出本地数据</button>
+    <button class="btn-outline" style="margin-top:0;" onclick="document.getElementById('importDataFile').click()">导入备份</button>
+    <input id="importDataFile" type="file" accept="application/json,.json" class="hidden" onchange="importLocalData(this)">
+  </div>
   <div class="add-machine-row">
     <input type="text" id="newMachineName" placeholder="输入机器编号/名称" maxlength="30">
     <button class="btn-primary" style="width:auto;padding:10px 20px;margin:0;" onclick="addMachine()">添加</button>
-  </div>
-  <div id="activationRow" class="add-machine-row hidden" style="margin-top:6px;">
-    <input type="text" id="activationCode" placeholder="输入卡密解锁更多机器" maxlength="32">
-    <button class="btn-primary" style="width:auto;padding:10px 20px;margin:0;background:var(--yellow);color:#111;" onclick="redeemCode()">激活</button>
-  </div>
-  <div id="proStatusRow" class="hidden" style="text-align:center;margin-top:6px;">
-    <span style="font-size:0.82em;color:var(--green);">✓ 已解锁 Pro 功能（最多 50 台机器）</span>
-  </div>
-  <div id="proFeatureHint" class="hidden" style="margin-top:8px;padding:8px 12px;background:rgba(255,215,0,0.08);border-radius:8px;font-size:0.78em;color:var(--muted);line-height:1.6;">
-    💡 <b style="color:var(--yellow);">卡密可解锁 Pro 功能：</b><br>
-    · 最多管理 50 台机器（当前限 3 台）<br>
-    · 运行中自由切换 积分卡/珠子收益 策略<br>
-    · 记录模式：仅记录落点拟合概率分布<br>
-    · 实时概率偏差 & 准确度分析<br>
-    <a href="https://www.520na.com/shop/TH5B1RKH" target="_blank" rel="noopener" style="display:inline-block;margin-top:6px;padding:5px 14px;background:var(--green);color:#111;border-radius:6px;text-decoration:none;font-weight:600;font-size:1.05em;">⚡ 自助购买 Pro 卡密 ¥9.9</a>
-    <!-- 暂时隐藏手动购买入口 <a href="buy.html" style="display:inline-block;margin-top:6px;margin-left:6px;padding:5px 14px;background:rgba(255,255,255,0.1);color:var(--muted);border-radius:6px;text-decoration:none;font-weight:500;font-size:0.9em;">手动购买</a> -->
   </div>
 </div>
 
@@ -787,54 +659,17 @@ function getMachines() { return getMachinesLocal(); }
 
 function saveMachines(machines) {
   saveMachinesLocal(machines);
-  cloudPushMachineList(machines);
+  // Cloud synchronization is disabled in offline-only mode.
 }
 
 function getMaxMachines() {
-  if (!cloudUid) return LIMIT_OFFLINE;
-  return userMaxMachines;
+  return Infinity;
 }
 
 function updateQuotaDisplay() {
   const machines = getMachines();
-  const max = getMaxMachines();
   const el = document.getElementById('machineQuota');
-  if (el) el.textContent = '机器数量: ' + machines.length + ' / ' + max;
-  const actRow = document.getElementById('activationRow');
-  const proStatus = document.getElementById('proStatusRow');
-  const proHint = document.getElementById('proFeatureHint');
-  const activated = cloudUid && userMaxMachines >= LIMIT_ACTIVATED;
-  const loggedNotActivated = cloudUid && userMaxMachines < LIMIT_ACTIVATED;
-  if (actRow) actRow.classList.toggle('hidden', !loggedNotActivated);
-  if (proStatus) proStatus.classList.toggle('hidden', !activated);
-  if (proHint) proHint.classList.toggle('hidden', !loggedNotActivated);
-}
-
-let _redeemBusy = false;
-async function redeemCode() {
-  if (_redeemBusy) return;
-  if (!fbReady || !cloudUid) { showToast('请先登录'); return; }
-  const input = document.getElementById('activationCode');
-  const code = input.value.trim();
-  if (!code) { showToast('请输入卡密'); return; }
-  _redeemBusy = true;
-  try {
-    const codeRef = fbDb.collection('codes').doc(code);
-    await fbDb.runTransaction(async tx => {
-      const doc = await tx.get(codeRef);
-      if (!doc.exists) throw new Error('卡密不存在');
-      if (doc.data().used) throw new Error('卡密已被使用');
-      tx.update(codeRef, { used: true, usedBy: cloudUid, usedAt: new Date().toISOString() });
-    });
-    userMaxMachines = LIMIT_ACTIVATED;
-    input.value = '';
-    showToast('激活成功！最多可添加 ' + LIMIT_ACTIVATED + ' 台机器');
-    updateQuotaDisplay();
-  } catch(e) {
-    showToast(e.message || '激活失败');
-  } finally {
-    _redeemBusy = false;
-  }
+  if (el) el.textContent = '机器数量: ' + machines.length + '（不限）';
 }
 
 function addMachine() {
@@ -842,13 +677,6 @@ function addMachine() {
   const name = input.value.trim();
   if (!name) { showToast('请输入机器名称'); return; }
   const machines = getMachines();
-  const max = getMaxMachines();
-  if (machines.length >= max) {
-    if (!cloudUid) showToast('离线模式最多 ' + max + ' 台机器，登录后可添加更多');
-    else if (userMaxMachines < LIMIT_ACTIVATED) showToast('当前最多 ' + max + ' 台机器，使用卡密可解锁更多');
-    else showToast('已达最大数量限制 (' + max + ')');
-    return;
-  }
   if (machines.some(m => m.id === name)) { showToast('该名称已存在'); return; }
   machines.push({ id: name, createdAt: new Date().toLocaleString() });
   saveMachines(machines);
@@ -863,11 +691,6 @@ function copyMachine(id) {
   newName = newName.trim();
   if (!newName) { showToast('名称不能为空'); return; }
   var machines = getMachines();
-  var max = getMaxMachines();
-  if (machines.length >= max) {
-    showToast('已达机器数量限制 (' + max + ')，无法复制');
-    return;
-  }
   if (machines.some(function(m) { return m.id === newName; })) { showToast('该名称已存在'); return; }
   // Copy state + history
   var stateRaw = null, histRaw = null;
@@ -879,11 +702,7 @@ function copyMachine(id) {
   } catch(e) {}
   machines.push({ id: newName, createdAt: new Date().toLocaleString() });
   saveMachines(machines);
-  // Push copied data to cloud
-  try {
-    if (stateRaw) cloudPushState(newName, JSON.parse(stateRaw));
-    if (histRaw) cloudPushHistory(newName, JSON.parse(histRaw));
-  } catch(e) {}
+  // Keep the copied data in local storage
   renderMachineList();
   showToast('已复制为: ' + newName);
 }
@@ -897,7 +716,7 @@ function deleteMachine(id) {
     localStorage.removeItem('pb_state_' + id);
     localStorage.removeItem('pb_history_' + id);
   } catch(e) {}
-  cloudDeleteMachine(id);
+  // Machine deletion is local only.
   renderMachineList();
   showToast('已删除: ' + id);
 }
@@ -975,12 +794,10 @@ function renderMachineList() {
 }
 
 function showPanel(name) {
-  document.getElementById('authPanel').classList.add('hidden');
   document.getElementById('machinePanel').classList.add('hidden');
   document.getElementById('setupPanel').classList.add('hidden');
   document.getElementById('gamePanel').classList.add('hidden');
   document.getElementById('resultPanel').classList.add('hidden');
-  if (name === 'auth') document.getElementById('authPanel').classList.remove('hidden');
   if (name === 'machine') document.getElementById('machinePanel').classList.remove('hidden');
   if (name === 'setup') document.getElementById('setupPanel').classList.remove('hidden');
   if (name === 'game') {
@@ -1000,7 +817,7 @@ let gameHistory = [];
 let currentGameMode = 'strategy';
 let lastRecordInfo = null;
 let recordMult = null;
-let userMaxMachines = LIMIT_LOGIN;
+let userMaxMachines = LIMIT_ACTIVATED;
 
 // ── Migrate old single-machine data if present ──
 (function migrateOldData() {
@@ -1022,97 +839,10 @@ let userMaxMachines = LIMIT_LOGIN;
   } catch(e) {}
 })();
 
-// ── Firebase connectivity check & proxy ──
-function probeFirebaseDirect() {
-  return new Promise(resolve => {
-    const timeout = setTimeout(() => resolve(false), 4000);
-    const testUrl = 'https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + FIREBASE_CONFIG.apiKey;
-    fetch(testUrl, { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' })
-      .then(r => { clearTimeout(timeout); resolve(true); })
-      .catch(() => { clearTimeout(timeout); resolve(false); });
-  });
-}
-function probeProxy() {
-  return new Promise(resolve => {
-    const timeout = setTimeout(() => resolve(false), 6000);
-    fetch('/api/fb-proxy?p=' + encodeURIComponent('identitytoolkit/v1/accounts:lookup') + '&key=' + FIREBASE_CONFIG.apiKey,
-      { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' })
-      .then(r => { clearTimeout(timeout); resolve(r.status !== 404 && r.status !== 0); })
-      .catch(() => { clearTimeout(timeout); resolve(false); });
-  });
-}
-function showNetworkHint(msg) {
-  const el = document.getElementById('authNetworkHint');
-  if (msg) el.innerHTML = msg;
-  el.classList.remove('hidden');
-}
-function showProxySuccess() {
-  const el = document.getElementById('authNetworkHint');
-  el.innerHTML = '✅ <b style="color:var(--green);">已自动启用网络代理</b>，您可以正常登录/注册';
-  el.style.background = 'rgba(78,204,163,0.1)';
-  el.style.borderColor = 'rgba(78,204,163,0.3)';
-  el.classList.remove('hidden');
-}
-function showOfflineHint() {
-  showNetworkHint('⚠️ <b style="color:var(--highlight);">网络连接失败</b><br>Firebase 服务需要访问 Google 服务器。如果您在中国大陆，可能需要：<br>① 使用 VPN / 科学上网工具<br>② 或点击下方「离线使用」');
-  const offBtn = document.querySelector('#authPanel .btn-outline');
-  if (offBtn) {
-    offBtn.style.cssText = 'margin-top:6px;background:var(--green);color:#111;font-weight:700;font-size:1.05em;padding:10px 0;';
-    offBtn.textContent = '👉 直接离线使用（无需登录）';
-  }
-}
-
-// ── Init: detect network → activate proxy if needed → init Firebase ──
-document.addEventListener('DOMContentLoaded', async () => {
-  // Step 1: Check direct Firebase connectivity
-  const directOk = await probeFirebaseDirect();
-
-  if (!directOk) {
-    // Step 2: Check if proxy is available (Vercel deployment)
-    const proxyOk = await probeProxy();
-    if (proxyOk) {
-      window.__activateFirebaseProxy();
-    }
-  }
-
-  // Step 3: (Re-)init Firebase with potentially proxied network
-  // If proxy was activated, Firebase SDK calls now go through proxy
-  if (!fbReady) {
-    initFirebase();
-  }
-
-  // Step 4: Auth state handling
-  if (fbReady) {
-    fbAuth.onAuthStateChanged(async user => {
-      if (user) {
-        cloudUid = user.uid;
-        document.getElementById('userEmail').textContent = user.email;
-        document.getElementById('userBar').classList.remove('hidden');
-        await cloudPullAll();
-        try {
-          const codeSnap = await fbDb.collection('codes').where('usedBy', '==', user.uid).limit(1).get();
-          userMaxMachines = codeSnap.empty ? LIMIT_LOGIN : LIMIT_ACTIVATED;
-        } catch(e) { userMaxMachines = LIMIT_LOGIN; }
-        document.getElementById('authNetworkHint').classList.add('hidden');
-        renderMachineList();
-        showPanel('machine');
-      } else {
-        cloudUid = null;
-        document.getElementById('userBar').classList.add('hidden');
-        showPanel('auth');
-        // Show appropriate hint based on network state
-        if (!directOk && window.__fbProxyActive) {
-          showProxySuccess();
-        } else if (!directOk) {
-          showOfflineHint();
-        }
-      }
-    });
-  } else {
-    // No Firebase → offline mode directly
-    renderMachineList();
-    showPanel('machine');
-  }
+// ── Offline-only startup ──
+document.addEventListener('DOMContentLoaded', () => {
+  renderMachineList();
+  showPanel('machine');
 });
 
 function initMachine() {
@@ -1131,7 +861,7 @@ function initMachine() {
   strategy._save();
   gameHistory = [];
   try { localStorage.setItem('pb_history_' + currentMachineId, '[]'); } catch(e) {}
-  cloudPushHistory(currentMachineId, []);
+  // History is saved locally only.
 
   showPanel('game');
   const adaptiveTag = confThreshold > 0 ? `  自适应(${confThreshold})` : '';
@@ -1365,7 +1095,7 @@ function initPriorityToggle() {
 }
 
 // ── Record-only Mode (activated feature) ──
-function isActivated() { return userMaxMachines >= LIMIT_ACTIVATED; }
+function isActivated() { return true; }
 
 function initGameMode() {
   const toggle = document.getElementById('modeToggle');
@@ -1468,7 +1198,7 @@ function quickRecord(slot, btn) {
   gameHistory.push(entry);
   if (currentMachineId) {
     try { localStorage.setItem('pb_history_' + currentMachineId, JSON.stringify(gameHistory)); } catch(e) {}
-    cloudPushHistory(currentMachineId, gameHistory);
+    // History is saved locally only.
   }
   renderHistory();
   refreshProbs();
@@ -1503,7 +1233,6 @@ function undoLastRecord() {
     gameHistory.pop();
     if (currentMachineId) {
       try { localStorage.setItem('pb_history_' + currentMachineId, JSON.stringify(gameHistory)); } catch(e) {}
-      cloudPushHistory(currentMachineId, gameHistory);
     }
   }
   lastRecordInfo = null;
@@ -1577,7 +1306,6 @@ function addHistory(mult, slot, win, bet) {
   gameHistory.push({mult, slot: slot+1, win, bet, time: new Date().toLocaleTimeString()});
   if (currentMachineId) {
     try { localStorage.setItem('pb_history_' + currentMachineId, JSON.stringify(gameHistory)); } catch(e) {}
-    cloudPushHistory(currentMachineId, gameHistory);
   }
   renderHistory();
 }
@@ -1912,94 +1640,48 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 2000);
 }
 
-// ═════════════════════════════════════════════════════════════════
-// Auth UI
-// ═════════════════════════════════════════════════════════════════
-let authMode = 'login';
-
-function switchAuthTab(mode) {
-  authMode = mode;
-  document.getElementById('tabLogin').classList.toggle('active', mode === 'login');
-  document.getElementById('tabRegister').classList.toggle('active', mode === 'register');
-  document.getElementById('authSubmit').textContent = mode === 'login' ? '登录' : '注册';
-  document.getElementById('authError').textContent = '';
+function exportLocalData() {
+  const data = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && key.indexOf('pb_') === 0) data[key] = localStorage.getItem(key);
+  }
+  const blob = new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), data }, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'pinball-strategies-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('本地数据已导出');
 }
 
-let _authBusy = false;
-async function submitAuth() {
-  if (_authBusy) return;
-  if (!fbReady) { showToast('Firebase 未配置'); return; }
-  const email = document.getElementById('authEmail').value.trim();
-  const pass = document.getElementById('authPassword').value;
-  const errEl = document.getElementById('authError');
-  errEl.textContent = '';
-  if (!email || !pass) { errEl.textContent = '请填写邮箱和密码'; return; }
-  if (pass.length < 6) { errEl.textContent = '密码至少6位'; return; }
-
-  const btn = document.getElementById('authSubmit');
-  btn.disabled = true;
-  btn.textContent = '处理中...';
-  _authBusy = true;
-  try {
-    // 添加超时控制，15秒无响应视为网络问题
-    const authPromise = authMode === 'register'
-      ? fbAuth.createUserWithEmailAndPassword(email, pass)
-      : fbAuth.signInWithEmailAndPassword(email, pass);
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject({ code: 'auth/network-request-failed', message: '连接超时' }), 15000)
-    );
-    await Promise.race([authPromise, timeoutPromise]);
-    if (authMode === 'register') {
-      // After registration, push any existing local data to cloud
-      cloudUid = fbAuth.currentUser.uid;
-      await cloudPushAll();
+function importLocalData(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function() {
+    try {
+      const backup = JSON.parse(reader.result);
+      if (!backup || !backup.data || typeof backup.data !== 'object' || Array.isArray(backup.data)) {
+        throw new Error('备份文件格式不正确');
+      }
+      const entries = Object.entries(backup.data);
+      if (!entries.length || entries.some(([key, value]) => key.indexOf('pb_') !== 0 || typeof value !== 'string')) {
+        throw new Error('备份内容无效');
+      }
+      if (!confirm('导入备份会覆盖同名本地数据，是否继续？')) return;
+      entries.forEach(([key, value]) => localStorage.setItem(key, value));
+      renderMachineList();
+      showToast('备份导入成功');
+    } catch (e) {
+      showToast(e.message || '导入失败');
+    } finally {
+      input.value = '';
     }
-    // onAuthStateChanged will handle the rest
-    document.getElementById('authNetworkHint').classList.add('hidden');
-  } catch(e) {
-    const msgs = {
-      'auth/email-already-in-use': '该邮箱已注册',
-      'auth/invalid-email': '邮箱格式不正确',
-      'auth/weak-password': '密码太简单',
-      'auth/user-not-found': '用户不存在',
-      'auth/wrong-password': '密码错误',
-      'auth/invalid-credential': '邮箱或密码错误',
-      'auth/too-many-requests': '尝试次数过多，请稍后再试',
-      'auth/network-request-failed': '网络连接失败，请检查网络或使用 VPN',
-    };
-    errEl.textContent = msgs[e.code] || e.message;
-    if (e.code === 'auth/network-request-failed') {
-      document.getElementById('authNetworkHint').classList.remove('hidden');
-    }
-  }
-  _authBusy = false;
-  btn.disabled = false;
-  btn.textContent = authMode === 'login' ? '登录' : '注册';
-}
-
-function useOffline() {
-  cloudUid = null;
-  document.getElementById('userBar').classList.add('hidden');
-  renderMachineList();
-  showPanel('machine');
-}
-
-async function logoutUser() {
-  if (fbReady) {
-    try { await fbAuth.signOut(); } catch(e) {}
-  }
-  cloudUid = null;
-  userMaxMachines = LIMIT_LOGIN;
-  strategy = null;
-  currentMachineId = null;
-  gameHistory = [];
-  document.getElementById('userBar').classList.add('hidden');
-  if (fbReady) {
-    showPanel('auth');
-  } else {
-    renderMachineList();
-    showPanel('machine');
-  }
+  };
+  reader.onerror = function() { showToast('读取备份文件失败'); input.value = ''; };
+  reader.readAsText(file);
 }
 
 // ── Register Service Worker ──
