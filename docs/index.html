@@ -7,103 +7,6 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#1a1a2e">
 <link rel="manifest" href="manifest.json">
-<script>
-// ── Firebase API 代理（解决中国大陆无法访问 Google 服务的问题）──
-// 通过 /api/fb-proxy serverless 函数转发 Firebase API 请求
-(function(){
-  window.__fbProxyActive = false;
-  var SERVICES = ['identitytoolkit.googleapis.com', 'securetoken.googleapis.com', 'firestore.googleapis.com'];
-  function rewriteUrl(originalUrl) {
-    for (var i = 0; i < SERVICES.length; i++) {
-      var prefix = 'https://' + SERVICES[i] + '/';
-      if (originalUrl.indexOf(prefix) === 0) {
-        var rest = originalUrl.substring(prefix.length);
-        var svc = SERVICES[i].split('.')[0]; // identitytoolkit | securetoken | firestore
-        // Split path and query
-        var qIdx = rest.indexOf('?');
-        var path = qIdx >= 0 ? rest.substring(0, qIdx) : rest;
-        var query = qIdx >= 0 ? rest.substring(qIdx + 1) : '';
-        var proxyUrl = '/api/fb-proxy?p=' + encodeURIComponent(svc + '/' + path);
-        if (query) proxyUrl += '&' + query;
-        return proxyUrl;
-      }
-    }
-    return null;
-  }
-  window.__activateFirebaseProxy = function() {
-    if (window.__fbProxyActive) return;
-    window.__fbProxyActive = true;
-    var origFetch = window.fetch;
-    window.fetch = function(input, init) {
-      var url = (typeof input === 'string') ? input : (input instanceof Request ? input.url : String(input));
-      var newUrl = rewriteUrl(url);
-      if (newUrl) {
-        // Convert form-encoded body to JSON for proxy compatibility
-        var newInit = init ? Object.assign({}, init) : {};
-        if (newInit.body && typeof newInit.body === 'string' && newInit.body.indexOf('=') > -1) {
-          var ct = '';
-          if (newInit.headers) {
-            if (newInit.headers instanceof Headers) ct = newInit.headers.get('content-type') || '';
-            else if (typeof newInit.headers === 'object') {
-              for (var hk in newInit.headers) { if (hk.toLowerCase() === 'content-type') ct = newInit.headers[hk]; }
-            }
-          }
-          if (ct.indexOf('x-www-form-urlencoded') > -1) {
-            var obj = {};
-            newInit.body.split('&').forEach(function(pair) {
-              var kv = pair.split('='); obj[decodeURIComponent(kv[0])] = decodeURIComponent(kv[1] || '');
-            });
-            newInit.body = JSON.stringify(obj);
-            if (newInit.headers instanceof Headers) { newInit.headers.set('content-type', 'application/json'); }
-            else if (typeof newInit.headers === 'object') {
-              var newHeaders = {};
-              for (var hk2 in newInit.headers) {
-                newHeaders[hk2.toLowerCase() === 'content-type' ? 'content-type' : hk2] = newInit.headers[hk2];
-              }
-              newHeaders['content-type'] = 'application/json';
-              newInit.headers = newHeaders;
-            }
-          }
-        }
-        if (typeof input === 'string') return origFetch.call(this, newUrl, newInit);
-        return origFetch.call(this, new Request(newUrl, newInit), newInit);
-      }
-      return origFetch.call(this, input, init);
-    };
-    var origOpen = XMLHttpRequest.prototype.open;
-    var origSend = XMLHttpRequest.prototype.send;
-    XMLHttpRequest.prototype.open = function(method, url) {
-      this.__proxyUrl = null;
-      if (typeof url === 'string') {
-        var newUrl = rewriteUrl(url);
-        if (newUrl) { this.__proxyUrl = newUrl; arguments[1] = newUrl; }
-      }
-      return origOpen.apply(this, arguments);
-    };
-    XMLHttpRequest.prototype.send = function(body) {
-      // Convert form body to JSON when going through proxy
-      if (this.__proxyUrl && body && typeof body === 'string' && body.indexOf('=') > -1) {
-        var ct = '';
-        try { ct = this.getRequestHeader && this._headers ? '' : ''; } catch(e) {}
-        // Firebase SDK sends form data as string — detect and convert
-        if (body.indexOf('grant_type=') > -1 || body.indexOf('returnSecureToken=') > -1) {
-          var obj = {};
-          body.split('&').forEach(function(pair) {
-            var kv = pair.split('='); obj[decodeURIComponent(kv[0])] = decodeURIComponent(kv[1] || '');
-          });
-          this.setRequestHeader('Content-Type', 'application/json');
-          return origSend.call(this, JSON.stringify(obj));
-        }
-      }
-      return origSend.call(this, body);
-    };
-    console.log('[Proxy] Firebase API proxy activated via /api/fb-proxy');
-  };
-})();
-</script>
-<script src="https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-app-compat.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-auth-compat.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-firestore-compat.min.js"></script>
 <title>弹珠机策略顾问</title>
 <style>
   :root {
@@ -791,15 +694,14 @@ function saveMachines(machines) {
 }
 
 function getMaxMachines() {
-  if (!cloudUid) return LIMIT_OFFLINE;
-  return userMaxMachines;
+  return Number.MAX_SAFE_INTEGER;
 }
 
 function updateQuotaDisplay() {
   const machines = getMachines();
   const max = getMaxMachines();
   const el = document.getElementById('machineQuota');
-  if (el) el.textContent = '机器数量: ' + machines.length + ' / ' + max;
+  if (el) el.textContent = '机器数量: ' + machines.length + '（不限）';
   const actRow = document.getElementById('activationRow');
   const proStatus = document.getElementById('proStatusRow');
   const proHint = document.getElementById('proFeatureHint');
@@ -1022,97 +924,10 @@ let userMaxMachines = LIMIT_LOGIN;
   } catch(e) {}
 })();
 
-// ── Firebase connectivity check & proxy ──
-function probeFirebaseDirect() {
-  return new Promise(resolve => {
-    const timeout = setTimeout(() => resolve(false), 4000);
-    const testUrl = 'https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + FIREBASE_CONFIG.apiKey;
-    fetch(testUrl, { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' })
-      .then(r => { clearTimeout(timeout); resolve(true); })
-      .catch(() => { clearTimeout(timeout); resolve(false); });
-  });
-}
-function probeProxy() {
-  return new Promise(resolve => {
-    const timeout = setTimeout(() => resolve(false), 6000);
-    fetch('/api/fb-proxy?p=' + encodeURIComponent('identitytoolkit/v1/accounts:lookup') + '&key=' + FIREBASE_CONFIG.apiKey,
-      { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' })
-      .then(r => { clearTimeout(timeout); resolve(r.status !== 404 && r.status !== 0); })
-      .catch(() => { clearTimeout(timeout); resolve(false); });
-  });
-}
-function showNetworkHint(msg) {
-  const el = document.getElementById('authNetworkHint');
-  if (msg) el.innerHTML = msg;
-  el.classList.remove('hidden');
-}
-function showProxySuccess() {
-  const el = document.getElementById('authNetworkHint');
-  el.innerHTML = '✅ <b style="color:var(--green);">已自动启用网络代理</b>，您可以正常登录/注册';
-  el.style.background = 'rgba(78,204,163,0.1)';
-  el.style.borderColor = 'rgba(78,204,163,0.3)';
-  el.classList.remove('hidden');
-}
-function showOfflineHint() {
-  showNetworkHint('⚠️ <b style="color:var(--highlight);">网络连接失败</b><br>Firebase 服务需要访问 Google 服务器。如果您在中国大陆，可能需要：<br>① 使用 VPN / 科学上网工具<br>② 或点击下方「离线使用」');
-  const offBtn = document.querySelector('#authPanel .btn-outline');
-  if (offBtn) {
-    offBtn.style.cssText = 'margin-top:6px;background:var(--green);color:#111;font-weight:700;font-size:1.05em;padding:10px 0;';
-    offBtn.textContent = '👉 直接离线使用（无需登录）';
-  }
-}
-
-// ── Init: detect network → activate proxy if needed → init Firebase ──
-document.addEventListener('DOMContentLoaded', async () => {
-  // Step 1: Check direct Firebase connectivity
-  const directOk = await probeFirebaseDirect();
-
-  if (!directOk) {
-    // Step 2: Check if proxy is available (Vercel deployment)
-    const proxyOk = await probeProxy();
-    if (proxyOk) {
-      window.__activateFirebaseProxy();
-    }
-  }
-
-  // Step 3: (Re-)init Firebase with potentially proxied network
-  // If proxy was activated, Firebase SDK calls now go through proxy
-  if (!fbReady) {
-    initFirebase();
-  }
-
-  // Step 4: Auth state handling
-  if (fbReady) {
-    fbAuth.onAuthStateChanged(async user => {
-      if (user) {
-        cloudUid = user.uid;
-        document.getElementById('userEmail').textContent = user.email;
-        document.getElementById('userBar').classList.remove('hidden');
-        await cloudPullAll();
-        try {
-          const codeSnap = await fbDb.collection('codes').where('usedBy', '==', user.uid).limit(1).get();
-          userMaxMachines = codeSnap.empty ? LIMIT_LOGIN : LIMIT_ACTIVATED;
-        } catch(e) { userMaxMachines = LIMIT_LOGIN; }
-        document.getElementById('authNetworkHint').classList.add('hidden');
-        renderMachineList();
-        showPanel('machine');
-      } else {
-        cloudUid = null;
-        document.getElementById('userBar').classList.add('hidden');
-        showPanel('auth');
-        // Show appropriate hint based on network state
-        if (!directOk && window.__fbProxyActive) {
-          showProxySuccess();
-        } else if (!directOk) {
-          showOfflineHint();
-        }
-      }
-    });
-  } else {
-    // No Firebase → offline mode directly
-    renderMachineList();
-    showPanel('machine');
-  }
+// ── Offline-only startup ──
+document.addEventListener('DOMContentLoaded', () => {
+  renderMachineList();
+  showPanel('machine');
 });
 
 function initMachine() {
@@ -1365,7 +1180,7 @@ function initPriorityToggle() {
 }
 
 // ── Record-only Mode (activated feature) ──
-function isActivated() { return userMaxMachines >= LIMIT_ACTIVATED; }
+function isActivated() { return true; }
 
 function initGameMode() {
   const toggle = document.getElementById('modeToggle');
