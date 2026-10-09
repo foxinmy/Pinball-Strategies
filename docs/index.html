@@ -947,17 +947,17 @@ function getRecommendation() {
   const tip = document.getElementById('resTip');
   if (rec.marbleRoi > 1) {
     tip.className = 'tip tip-good';
-    tip.textContent = '✓ 期望正收益！建议多投';
+    tip.textContent = '模型估算正期望（依赖历史概率），不保证实际盈利';
   } else if (Math.abs(rec.marbleRoi - 1) < 0.0001) {
     tip.className = 'tip tip-even';
-    tip.textContent = '≈ 收支平衡';
+    tip.textContent = '模型估算收支平衡';
   } else {
     if (strategy.priority === 'marbles') {
       tip.className = 'tip tip-bad';
-      tip.textContent = '✗ 期望负收益，仅投最低数量';
+      tip.textContent = '模型估算负期望，珠子优先模式建议最低注';
     } else {
       tip.className = 'tip tip-bad';
-      tip.textContent = '✗ 珠子期望亏损，但这是积分卡最优投珠数';
+      tip.textContent = '模型估算珠子负期望；此下注量仅针对积分卡效率优化';
     }
   }
 
