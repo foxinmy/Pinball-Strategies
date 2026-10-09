@@ -350,6 +350,11 @@
   <div id="machineQuota" style="text-align:center;font-size:0.82em;color:var(--muted);margin-bottom:8px;"></div>
   <div id="machineList" class="machine-list"></div>
   <div id="machineEmpty" style="text-align:center;color:var(--muted);font-size:0.9em;padding:12px;">暂无机器，请添加</div>
+  <div class="row" style="margin-top:10px;">
+    <button class="btn-outline" style="margin-top:0;" onclick="exportLocalData()">导出本地数据</button>
+    <button class="btn-outline" style="margin-top:0;" onclick="document.getElementById('importDataFile').click()">导入备份</button>
+    <input id="importDataFile" type="file" accept="application/json,.json" class="hidden" onchange="importLocalData(this)">
+  </div>
   <div class="add-machine-row">
     <input type="text" id="newMachineName" placeholder="输入机器编号/名称" maxlength="30">
     <button class="btn-primary" style="width:auto;padding:10px 20px;margin:0;" onclick="addMachine()">添加</button>
@@ -1644,6 +1649,50 @@ function showToast(msg) {
   t.textContent = msg;
   t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+function exportLocalData() {
+  const data = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && key.indexOf('pb_') === 0) data[key] = localStorage.getItem(key);
+  }
+  const blob = new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), data }, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'pinball-strategies-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('本地数据已导出');
+}
+
+function importLocalData(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function() {
+    try {
+      const backup = JSON.parse(reader.result);
+      if (!backup || !backup.data || typeof backup.data !== 'object' || Array.isArray(backup.data)) {
+        throw new Error('备份文件格式不正确');
+      }
+      const entries = Object.entries(backup.data);
+      if (!entries.length || entries.some(([key, value]) => key.indexOf('pb_') !== 0 || typeof value !== 'string')) {
+        throw new Error('备份内容无效');
+      }
+      if (!confirm('导入备份会覆盖同名本地数据，是否继续？')) return;
+      entries.forEach(([key, value]) => localStorage.setItem(key, value));
+      renderMachineList();
+      showToast('备份导入成功');
+    } catch (e) {
+      showToast(e.message || '导入失败');
+    } finally {
+      input.value = '';
+    }
+  };
+  reader.onerror = function() { showToast('读取备份文件失败'); input.value = ''; };
+  reader.readAsText(file);
 }
 
 // ── Register Service Worker ──
