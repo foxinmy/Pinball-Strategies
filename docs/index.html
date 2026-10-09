@@ -1193,12 +1193,10 @@ function getMultDeviation(multCounts, multTotal) {
 }
 
 function estimateV2Benefit(tvd) {
-  // Based on paper simulation data: TVD → approximate V2 improvement range
-  // J=10, cards priority, V2(ct=5) vs original strategy
-  if (tvd < 0.03) return { level: '接近均匀', min: 47, max: 134, color: 'var(--muted)' };
-  if (tvd < 0.08) return { level: '轻微偏斜', min: 134, max: 379, color: 'var(--green)' };
-  if (tvd < 0.15) return { level: '中等偏斜', min: 379, max: 1013, color: 'var(--yellow)' };
-  return { level: '严重偏斜', min: 1013, max: 1989, color: 'var(--highlight)' };
+  if (tvd < 0.03) return { level: '接近均匀', color: 'var(--muted)' };
+  if (tvd < 0.08) return { level: '轻微偏斜', color: 'var(--green)' };
+  if (tvd < 0.15) return { level: '中等偏斜', color: 'var(--yellow)' };
+  return { level: '严重偏斜', color: 'var(--highlight)' };
 }
 
 function updateAnalysisPanel() {
@@ -1350,31 +1348,15 @@ function updateAnalysisPanel() {
 
   if (hasLandingData) {
     const tvd = calculateDeviation();
-    const benefit = estimateV2Benefit(tvd);
+    const skew = estimateV2Benefit(tvd);
     tvdEl.textContent = (tvd * 100).toFixed(1) + '%';
-    tvdEl.style.color = benefit.color;
-    skewEl.textContent = benefit.level;
-    skewEl.style.color = benefit.color;
-    benefitEl.innerHTML = `<span style="color:var(--green);font-weight:700;">+${benefit.min}% ~ +${benefit.max}%</span>`;
-
-    if (tvd >= 0.15) {
-      benefitVerdict.innerHTML = '🔥 <b style="color:var(--highlight);">落点严重偏斜！</b>V2策略可极大幅度提升积分卡产出，甚至有可能实现<b>净盈利</b>（珠子越打越多）。';
-      benefitVerdict.style.background = 'rgba(255,107,107,0.12)';
-    } else if (tvd >= 0.08) {
-      benefitVerdict.innerHTML = '⚡ <b style="color:var(--yellow);">中等偏斜</b>，V2策略可显著提升积分卡效率。建议启用自适应投注(ct=5)利用偏差。';
-      benefitVerdict.style.background = 'rgba(255,217,61,0.1)';
-    } else if (tvd >= 0.03) {
-      benefitVerdict.innerHTML = '📈 <b style="color:var(--green);">轻微偏斜</b>，V2策略可带来可观提升。自适应投注能有效利用这些细微偏差。';
-      benefitVerdict.style.background = 'rgba(78,204,163,0.08)';
-    } else {
-      benefitVerdict.innerHTML = '✓ 落点接近均匀分布，V2策略仍可通过避免floor浪费提升效率，但提升幅度有限。';
-      benefitVerdict.style.background = 'rgba(255,255,255,0.03)';
-    }
-
-    // If adaptive is not enabled, add hint
-    if (strategy.confidenceThreshold <= 0 && tvd >= 0.05) {
-      benefitVerdict.innerHTML += '<br><span style="color:var(--yellow);font-size:0.9em;">💡 提示：当前未启用自适应投注，建议在高级设置中开启（推荐ct=5）以利用偏差。</span>';
-    }
+    tvdEl.style.color = skew.color;
+    skewEl.textContent = skew.level;
+    skewEl.style.color = skew.color;
+    benefitEl.textContent = '暂不估算：需要同条件策略对照模拟';
+    benefitVerdict.textContent = '落点偏斜只说明历史分布不均匀，不代表存在正期望收益。请结合当前亮灯槽位的估算中奖概率，并用独立数据验证后再判断。';
+    benefitVerdict.style.background = 'rgba(255,255,255,0.03)';
+  }
   } else {
     tvdEl.textContent = `—（需≥50局落点记录，当前${plays}局）`;
     tvdEl.style.color = 'var(--muted)';
